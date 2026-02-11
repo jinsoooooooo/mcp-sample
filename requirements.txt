@@ -1,4 +1,7 @@
 fastmcp
+uvicorn
+pytest
+requests
 
 msal
 python-dotenv
