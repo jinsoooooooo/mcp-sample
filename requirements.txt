@@ -2,6 +2,7 @@ fastmcp
 uvicorn
 pytest
 requests
+httpx
 
 msal
 python-dotenv
