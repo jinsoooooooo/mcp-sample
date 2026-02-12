@@ -1,6 +1,7 @@
 from fastmcp import FastMCP
 from config import settings
 import requests
+import httpx
 from typing import Optional, Annotated
 from auth import get_access_token
 import json
@@ -17,7 +18,9 @@ def add(a: int, b: int) -> int:
 
 @mcp.tool()
 def ping() -> str:
-    """서버가 정상적으로 구성 되었는지 확인하는 테스트 툴 입니다."""
+    """
+    서버가 정상적으로 구성 되었는지 확인하는 테스트 툴 입니다. 
+    """
     return f"pong 메일 읽기 서버 준비 완료. (Client ID 로드 상태: {bool(CLIENT_ID)})"
 
 
@@ -27,13 +30,12 @@ def search_my_emails(
     sender_email: Annotated[Optional[str], "특정 발송자의 메일만 찾을 때 사용하는 정확한 이메일 주소 (예: no-reply@microsoft.com). 특정인 지정이 없으면 None으로 둡니다."] = None
 ) -> str:
     """
+    사용자의 최근 메일을 검색하여 읽어옵니다.
     Microsoft 365 (Outlook) 내 메일함에서 최근 이메일을 검색하고 읽어옵니다.
     
     [LLM 에이전트 사용 가이드]
-    1. 사용자가 "최근 메일 확인해줘"라고 포괄적으로 요청하면 limit 값만 넣어서 호출하세요.
-    2. 사용자가 "마이크로소프트에서 온 메일 찾아줘"처럼 특정 발송자를 언급하면, 
-       대화 맥락에서 이메일 주소를 추론하여 sender_email 파라미터에 반드시 값을 채워 호출하세요.
-    3. 결과는 이메일 제목, 보낸사람, 받은시간의 텍스트 목록으로 반환됩니다.
+    1. 사용자가 "최근 메일 확인해줘"라고 포괄적으로 요청하면 limit 값만 넣어서 호출하세요. limit이 지정되어 있지 않으면 기본값 5로 호출합니다.
+    2. 결과는 이메일 제목, 보낸사람, 받은시간의 텍스트 목록으로 반환됩니다.
     """
     """
     Microsoft 메일함에서 가장 최근 이메일들을 읽어옵니다.
