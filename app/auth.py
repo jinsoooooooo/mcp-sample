@@ -1,14 +1,20 @@
 import msal
 from config import settings
 
-CLIENT_ID = settings.CLIENT_ID
-TENANT_ID = settings.TENANT_ID
+AZURE_CLIENT_ID = settings.AZURE_CLIENT_ID
+AZURE_CLIENT_SECRET = settings.AZURE_CLIENT_SECRET
+AZURE_TENANT_ID = settings.AZURE_TENANT_ID
 
-# 우리가 요청할 권한 (메일 읽기)
-SCOPES = ["Mail.Read"]
+
 
 # Microsoft 인증 서버 주소 설정
-AUTHORITY = f"https://login.microsoftonline.com/{TENANT_ID}"
+AUTHORITY = f"https://login.microsoftonline.com/{AZURE_TENANT_ID}"
+# 우리가 요청할 권한 
+# SCOPES = ["Mail.Read"]
+SCOPES = ["https://graph.microsoft.com/.default"]
+
+
+
 
 def get_access_token():
     """
@@ -16,23 +22,38 @@ def get_access_token():
     """
 
     #1. MSAL 퍼블릭 클라이어느 앱 초기화
-    app = msal.PublicClientApplication(
-        CLIENT_ID,
-        authority=AUTHORITY
-    )
-
-    # 2. 기존에 로그인한 기록(캐시)이 있는지 확인
-    accounts = app.get_accounts()
-    if accounts:
-        print("기존 로그인 정보를 사용하여 토큰을 갱신합니다...")
-        result = app.acquire_token_silent(SCOPES, account=accounts[0])
-        if result and "access_token" in result:
-            return result["access_token"]
+    # 브라우저 인증을 하는 'PublicClientApplication' 대신에 서버에서 사용하기 위해 SECRET으로 인증하는 'ConfidentialClientApplication' 으로 교체 함
+    # app = msal.PublicClientApplication(
+    #     AZURE_CLIENT_ID,
+    #     authority=AUTHORITY
+    # )
+    # 기존에 로그인한 기록(캐시)이 있는지 확인
+    # accounts = app.get_accounts()
+    # if accounts:
+    #     print("기존 로그인 정보를 사용하여 토큰을 갱신합니다...")
+    #     result = app.acquire_token_silent(SCOPES, account=accounts[0])
+    #     if result and "access_token" in result:
+    #         return result["access_token"]
     
     # 3. 캐시가 없다면 브라우저를 열어 대화형 로그인 진행
-    print("브라우저를 열어 Microsoft 로그인을 진행합니다...")
-    # 여기서 Level 1 때 설정한 리디렉션 URI가 백그라운드에서 사용됩니다.
-    result = app.acquire_token_interactive(scopes=SCOPES)
+    # print("브라우저를 열어 Microsoft 로그인을 진행합니다...")
+    # # 여기서 Level 1 때 설정한 리디렉션 URI가 백그라운드에서 사용됩니다.
+    # result = app.acquire_token_interactive(scopes=SCOPES)
+
+    #1. MSAL 퍼블릭 클라이어느 앱 초기화
+    app = msal.ConfidentialClientApplication(
+        AZURE_CLIENT_ID,
+        authority=AUTHORITY,
+        client_credential=AZURE_CLIENT_SECRET,
+    )
+
+    # 캐시에서 토큰 확인
+    result = app.acquire_token_silent(SCOPES, account=None)
+
+    if not result:
+        # 캐시에 없으면 서버 대 서버 통신으로 즉시 발급 (브라우저 X)
+        print("🔄 서버 자격 증명으로 새 토큰을 요청합니다...")
+        result = app.acquire_token_for_client(scopes=SCOPES)
     
     if "access_token" in result:
         print("✅ 토큰 발급 성공!")
