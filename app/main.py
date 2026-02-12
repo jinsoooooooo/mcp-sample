@@ -194,8 +194,3 @@ if __name__ == "__main__":
     
     # stdio 대신 sse 전송 방식을 사용하여 8000번 포트에서 실행
     mcp.run(transport="streamable-http", port=8000)
-
-# 아니 그 방법이면 실제 프로덕션에서 azure tenat 갈때 소스가 달라져서 안돼 
-# 차라리 내 auzre에서 지금 코드가 동작하도록 실제 메일을 세팅하는게 좋지 않음? 환경을 프로덕션이랑 맞추는게 낫지
-
-
