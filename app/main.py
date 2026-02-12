@@ -71,13 +71,15 @@ def search_my_emails(
             f"$top={limit}&"
             f"$filter=from/emailAddress/address ne '{my_email}'&"
             f"$select=subject,sender,receivedDateTime"
+            
 
         )
 
 
         headers = {
             "Authorization" : f"Bearer {token}",
-            "Accept" : "application/json"
+            "Accept" : "application/json",
+            "ConsistencyLevel": "eventual"  # Optional: 실시간이 아닌 인덱싱으로 검색 = 데이터가 많은거 조회 할 때 넣는 옵션 속도는 향상되느 정확도가 떨어질 수 있으므로 빼도 됨
         }
         
         # 3. API 호출
@@ -87,8 +89,6 @@ def search_my_emails(
         print(json.dumps(response.json(), indent=2, ensure_ascii=False))
 
         emails = response.json().get("value",[])
-
-        response.raise_for_status() # 에러 발생 시 예외 처리
 
         # 5. LLM이 읽기 좋게 문자열로 포매팅
         result_text = f"총 {len(emails)}개의 최근 메일을 찾았습니다:\n\n"
@@ -150,7 +150,8 @@ async def search_unread_mail(
 
         headers = {
             "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "ConsistencyLevel": "eventual" # Optional: 실시간이 아닌 인덱싱으로 검색 = 데이터가 많은거 조회 할 때 넣는 옵션 속도는 향상되느 정확도가 떨어질 수 있으므로 빼도 됨
         }
 
         # 3. API 호출
