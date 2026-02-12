@@ -6,9 +6,11 @@ class Settings(BaseSettings):
     
     model_config = SettingsConfigDict(env_file=env_file, env_file_encoding="utf-8")
     
-    CLIENT_ID: str
-    TENANT_ID: str
+    AZURE_CLIENT_ID: str
+    AZURE_TENANT_ID: str
+    AZURE_CLIENT_SECRET: str
+    DEFAULT_USER_EMAIL: str
+
 
 
 settings = Settings()
-    
