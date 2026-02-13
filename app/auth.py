@@ -62,6 +62,30 @@ def get_access_token():
         error_msg = result.get('error_description', '알 수 없는 오류')
         raise Exception(f"로그인 실패: {error_msg}")    
 
+async def async_get_access_token():
+    """
+    비동기로 MSAL의 access_token을 가져옵니다.
+    """
+    app = msal.ConfidentialClientApplication(
+        AZURE_CLIENT_ID,
+        authority=AUTHORITY,
+        client_credential=AZURE_CLIENT_SECRET,
+    )
+    # 캐시에서 토큰 확인
+    result = app.acquire_token_silent(SCOPES, account=None)
+
+    if not result:
+        # 캐시에 없으면 서버 대 서버 통신으로 즉시 발급 (브라우저 X)
+        print("🔄 서버 자격 증명으로 새 토큰을 요청합니다...")
+        result = app.acquire_token_for_client(scopes=SCOPES)
+    
+    if "access_token" in result:
+        print("✅ 토큰 발급 성공!")
+        return result["access_token"]
+    else:
+        error_msg = result.get('error_description', '알 수 없는 오류')
+        raise Exception(f"로그인 실패: {error_msg}")    
+
 
 # 단독 실행 테스트용 코드
 if __name__ == "__main__":
