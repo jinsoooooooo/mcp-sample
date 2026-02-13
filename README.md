@@ -20,7 +20,7 @@ Microsoft Graph API 앱 등록 및 권한 획득
 
 
 
-2단계: 메일 읽기 권한(API Permissions) 부여
+2단계: API 권한(API Permissions) 부여 (.default 스코프 기준)
 
 앱이 생성되면 화면이 전환됩니다. 왼쪽 메뉴에서 [API 권한](API permissions)을 클릭합니다.
 
@@ -28,11 +28,18 @@ Microsoft Graph API 앱 등록 및 권한 획득
 
 팝업 창에서 **[Microsoft Graph]**를 선택합니다.
 
-[위임된 권한](Delegated permissions)을 클릭합니다.
+[애플리케이션 권한](Application permissions)을 클릭합니다.
 
 검색창에 Mail.Read를 입력하여 검색한 후, 펼쳐지는 목록에서 Mail.Read 항목에 체크박스를 선택합니다.
 
+추가로 메일 발송 기능을 사용할 경우 Mail.Send 권한도 함께 체크합니다.
+
 하단의 [권한 추가] 버튼을 클릭합니다.
+
+권한 추가 후 반드시 [관리자 동의 부여(Grant admin consent)]를 진행합니다.
+
+> 현재 코드에서는 `SCOPES = ["https://graph.microsoft.com/.default"]` 를 사용하므로,
+> 위에서 설정한 애플리케이션 권한(및 관리자 동의)을 기반으로 토큰이 발급됩니다.
 
 
 
