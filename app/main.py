@@ -115,7 +115,7 @@ async def search_unread_mail(
 ) -> str:
     """
     사용자의 최근 메일을 검색하여 읽어옵니다.
-    Microsoft 365 (Outlook) 내 메일함에서 최근 이메일을 검색하고 읽어옵니다.
+    Microsoft 365 (Outlook) 내 메일함에서 이메일을 검색하고 읽어옵니다.
 
     [LLM 에이전트 사용 가이드]
     1. 사용자가 "읽지 않은 메일 확인해줘"라고 포괄적으로 요청하면 호출 하세요
@@ -187,7 +187,130 @@ async def search_unread_mail(
 
     except Exception as e:
         raise RuntimeError(f"메일 로드 실패: {str(e)}")
+
+
+@mcp.tool()
+async def send_my_email(
+    to_address: Annotated[str,"받는 사람의 이메일주소 입니다. 만약 받는사람이 여려명일 경우 콤마(.)로 구분합니다. (예: abc@company.com,def@compay.com). \n이 필드는 반드시 채워야 하는 **필수값**입니다. "],
+    subject: Annotated[str,"발송할 메일의 제목입니다. \n이 필드는 반드시 채워야 하는 **필수값**입니다."],
+    body: Annotated[str,"발송할 메일의 본문 내용입니다. 본문 내용의 줄바꿈 문자는 '\n'으로 작성되어야 합니다. \n이 필드는 반드시 채워야 하는 **필수값**입니다."],
+    my_email: Annotated[str,"보내는 사람(나)의 이메일주소 입니다. (예: no-reply@microsoft.com). \n특정 사용자가 지정되어 있지 않으면 이 필드는 비워둡니다."]=None,
+    cc_address: Annotated[str,"참조자(CC)의 이메일 주소 입니다. 만약 참조자가 여려명일 경우 콤마(.)로 구분합니다. (예: abc@company.com,def@compay.com). \n참조자가 특정되어 있지 않으면 이 필드는 비워둡니다."]=None,
+) -> str:
+    """
+    사용자의 메일주소로 다른 사람에게 메일을 보내는 도구입니다.
+    Microsoft 365 (Outlook)의 사용자의 메일주소로 메일을 발송 합니다.
+
+    [LLM 에이전트 사용 가이드]
+    1. 사용자가 "메일을 보내줘" 또는 "~에게 메일을 보내주세요"등 메일을 작성을 요청 했을 때 사용합니다. 
+    2. 이 도구를 사용 할 때, 'to_address', 'subject', 'body' 이 세 가지 필드는 반드시 채워져야 하는 **필수값**입니다.
+
+    Args: 
+        - to_address (str): 받는 사람의 이메일주소 입니다. 만약 받는사람이 여려명일 경우 콤마(.)로 구분합니다. (예: abc@company.com,def@compay.com). 이 필드는 반드시 채워야 하는 **필수값**입니다.
+        - subject (str): 발송할 메일의 제목입니다. 필드는 반드시 채워야 하는 **필수값**입니다.
+        - body (str): 발송할 메일의 본문 내용입니다. 필드는 반드시 채워야 하는 **필수값**입니다.
+        - my_email (str, optional): 보내는 사람(나)의 이메일주소 입니다. (예: no-reply@microsoft.com). 특정 사용자가 지정되어 있지 않으면 이 필드는 비워둡니다.
+        - cc_address (str, optional): 참조자(CC)의 이메일 주소 입니다. 만약 참조자가 여려명일 경우 콤마(.)로 구분합니다. (예: abc@company.com,def@compay.com). 참조자가 특정되어 있지 않으면 이 필드는 비워둡니다.
+
+    Returns:
+        str: 발송 결과를 알리는 메시지 문자열입니다.
+            성공 시: "메일 발송 성공 (To: 3명)" 형태의 메시지를 반환합니다.
+
+    Raises:
+        RuntimeError: 네트워크 오류나 API 인증 실패 시 발생합니다.
+    """
+
+    # token 가져오기 
+    token = get_access_token()
+
+    if my_email is None or my_email=="":
+        my_email=DEFAULT_USER_EMAIL
     
+    # 본문 파싱: 줄바꿈 문자 변환
+    # html_body = body.replace('\r\n','<br/>').replace('\n','<br/>')
+    text_body = f"{body}\n본 메일은 MCP에 의하여 발송되었습니다."
+
+    # 받는사람 cealn & JSON 형식의 리스트로 작성
+    to_address_list = []
+    for addr in to_address.split(','):
+        clean_addr = addr.strip()
+        if clean_addr:
+            to_address_list.append(
+                {
+                    "emailAddress": {
+                        "address": clean_addr
+                    }
+                }
+            )
+    print(f"to_address:{to_address}")
+    print(f"to_address_list:{to_address_list}")
+
+    cc_address_list = []
+    for addr in cc_address.split(','):
+        clean_addr = addr.strip()
+        if clean_addr:
+            cc_address_list.append(
+                {
+                    "emailAddress": {
+                        "address": clean_addr
+                    }
+                }
+            )
+    print(f"cc_address:{cc_address}")
+    print(f"cc_address_list:{cc_address_list}")
+
+    # payload 구성
+    message = {
+        "subject": subject,
+        "body": {
+            "contentType": "Text",
+            "content": text_body
+        },
+        "toRecipients": to_address_list
+    }
+    
+    # CC 주소가 있으면 추가
+    if cc_address_list:
+        message["ccRecipients"] = cc_address_list
+    
+    payload = {
+        "message": message,
+        "saveToSentItems": True
+    }
+
+    # endpoint 구성
+    endpoint = f"https://graph.microsoft.com/v1.0/users/{my_email}/sendMail"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                endpoint,
+                headers=headers,
+                json=payload
+            )
+            print(response)
+            # 202 Accepted 체크
+            if response.status_code == 202:
+                return f"성공적으로 메일을 보냈습니다.\n- 받는사람: {to_address}\n- 제목: {subject}"
+            else:
+                # 에러 발생 시 상세 내용 확인을 위해 raise
+                response.raise_for_status()
+                return "메일 발송 요청이 처리되었으나, 오류가 발생하였습니다."
+    except httpx.HTTPStatusError as e:
+        # HTTP 에러 (4xx, 5xx) 처리
+        raise RuntimeError(f"메일 발송 HTTP 에러: {e.response.text}")
+    except Exception as e:
+        # 기타 네트워크 에러 등
+        raise RuntimeError(f"메일 발송 실패: {str(e)}")
+
+
+
+
+
 
 if __name__ == "__main__":
     print("🚀 FastMCP MS 메일 서버를 HTTP(SSE) 모드로 시작합니다...")
