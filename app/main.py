@@ -204,6 +204,7 @@ async def send_my_email(
     [LLM 에이전트 사용 가이드]
     1. 사용자가 "메일을 보내줘" 또는 "~에게 메일을 보내주세요"등 메일을 작성을 요청 했을 때 사용합니다. 
     2. 이 도구를 사용 할 때, 'to_address', 'subject', 'body' 이 세 가지 필드는 반드시 채워져야 하는 **필수값**입니다.
+    3. 이 도구를 통해 보내는 메일의 제목(subject)와 본문(body)는 반드시 UTF-8 인코딩으로 채워져야 합니다.
 
     Args: 
         - to_address (str): 받는 사람의 이메일주소 입니다. 만약 받는사람이 여려명일 경우 콤마(.)로 구분합니다. (예: abc@company.com,def@compay.com). 이 필드는 반드시 채워야 하는 **필수값**입니다.
@@ -245,20 +246,6 @@ async def send_my_email(
     print(f"to_address:{to_address}")
     print(f"to_address_list:{to_address_list}")
 
-    cc_address_list = []
-    for addr in cc_address.split(','):
-        clean_addr = addr.strip()
-        if clean_addr:
-            cc_address_list.append(
-                {
-                    "emailAddress": {
-                        "address": clean_addr
-                    }
-                }
-            )
-    print(f"cc_address:{cc_address}")
-    print(f"cc_address_list:{cc_address_list}")
-
     # payload 구성
     message = {
         "subject": subject,
@@ -269,9 +256,26 @@ async def send_my_email(
         "toRecipients": to_address_list
     }
     
-    # CC 주소가 있으면 추가
-    if cc_address_list:
-        message["ccRecipients"] = cc_address_list
+    # 참조자(CC)가 있으면 참조메일주소 넣기 
+    if cc_address is not None and cc_address != "":
+        cc_address_list = []
+
+        for addr in cc_address.split(','):
+            clean_addr = addr.strip()
+            if clean_addr:
+                cc_address_list.append(
+                    {
+                        "emailAddress": {
+                            "address": clean_addr
+                        }
+                    }
+                )
+        print(f"cc_address:{cc_address}")
+        print(f"cc_address_list:{cc_address_list}")
+
+        # CC 주소가 있으면 추가
+        if cc_address_list:
+            message["ccRecipients"] = cc_address_list
     
     payload = {
         "message": message,
@@ -282,7 +286,7 @@ async def send_my_email(
     endpoint = f"https://graph.microsoft.com/v1.0/users/{my_email}/sendMail"
     headers = {
         "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json; charset=utf-8"
     }
 
     try:
