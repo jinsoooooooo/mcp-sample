@@ -1,0 +1,77 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "MCP: Run Server",
+      "type": "shell",
+      "command": "./.venv/bin/python app/main.py",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Test: Pytest (all)",
+      "type": "shell",
+      "command": "PYTHONPATH=. ./.venv/bin/pytest -q",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Test: Pytest (target)",
+      "type": "shell",
+      "command": "PYTHONPATH=. ./.venv/bin/pytest -q ${input:pytestTarget}",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "MCP: Inspector",
+      "type": "shell",
+      "command": "npx @modelcontextprotocol/inspector",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "pytestTarget",
+      "type": "promptString",
+      "description": "테스트 대상 입력 (예: tests/test_server.py::test_add)",
+      "default": "tests/test_server.py"
+    }
+  ]
+}

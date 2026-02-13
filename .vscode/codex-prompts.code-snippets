@@ -1,0 +1,84 @@
+{
+  "Codex 학습모드 리팩토링": {
+    "scope": "markdown,plaintext,python",
+    "prefix": "cx-refactor",
+    "body": [
+      "아래 선택 코드를 리팩토링해줘.",
+      "요구사항:",
+      "- 동작 변경 금지",
+      "- 가독성 개선",
+      "- 예외 처리 보강",
+      "- 테스트 1개 추가",
+      "- 출력 형식: 문제 정의 -> 접근 방법 -> 코드 -> 검증 -> 한 줄 요약",
+      "",
+      "코드:",
+      "$TM_SELECTED_TEXT"
+    ],
+    "description": "선택 코드 리팩토링 요청 템플릿"
+  },
+  "Codex 버그 분석": {
+    "scope": "markdown,plaintext,python",
+    "prefix": "cx-bug",
+    "body": [
+      "아래 코드/에러를 분석해줘.",
+      "요구사항:",
+      "- 재현 조건",
+      "- 근본 원인",
+      "- 최소 수정안",
+      "- 회귀 방지 테스트 1개",
+      "- 출력 형식: 문제 정의 -> 접근 방법 -> 코드 -> 검증 -> 한 줄 요약",
+      "",
+      "에러/코드:",
+      "$TM_SELECTED_TEXT"
+    ],
+    "description": "버그 원인 분석 + 수정 요청 템플릿"
+  },
+  "Codex 테스트 생성": {
+    "scope": "markdown,plaintext,python",
+    "prefix": "cx-test",
+    "body": [
+      "아래 함수 기준으로 pytest 테스트를 작성해줘.",
+      "요구사항:",
+      "- 정상 케이스 1개",
+      "- 경계값/예외 케이스 1개",
+      "- fixture가 필요하면 최소로 사용",
+      "- 실행 명령도 함께 제시",
+      "",
+      "대상 코드:",
+      "$TM_SELECTED_TEXT"
+    ],
+    "description": "pytest 테스트 생성 요청 템플릿"
+  },
+  "Codex 문서 + 다이어그램": {
+    "scope": "markdown,plaintext,python",
+    "prefix": "cx-doc",
+    "body": [
+      "아래 변경사항 기준으로 문서를 작성해줘.",
+      "요구사항:",
+      "- docs/CODEX_WORKFLOW_GUIDE.md 형식 유지",
+      "- Mermaid 다이어그램 1개 포함",
+      "- 예시 명령 2개 포함",
+      "- 실패 사례와 해결 방법 1개 포함",
+      "",
+      "변경사항:",
+      "$TM_SELECTED_TEXT"
+    ],
+    "description": "가이드 문서/다이어그램 작성 요청 템플릿"
+  },
+  "Codex 코드 리뷰": {
+    "scope": "markdown,plaintext,python",
+    "prefix": "cx-review",
+    "body": [
+      "아래 변경 코드를 리뷰해줘.",
+      "요구사항:",
+      "- 버그/리스크 중심",
+      "- 성능/보안 이슈 우선 정렬",
+      "- 파일 경로 + 라인 기준으로 지적",
+      "- 필요 시 수정 패치 제안",
+      "",
+      "변경 코드:",
+      "$TM_SELECTED_TEXT"
+    ],
+    "description": "리스크 중심 코드 리뷰 요청 템플릿"
+  }
+}

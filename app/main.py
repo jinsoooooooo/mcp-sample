@@ -20,7 +20,7 @@ def add(a: int, b: int) -> int:
 @mcp.tool()
 def ping() -> str:
     """
-    서버가 정상적으로 구성 되었는지 확인하는 테스트 툴 입니다. 
+    서버가 정상적으로 구성 되었는지 확인하는 테스트 툴 입니다.
     """
     token = get_access_token()
     print(f"token: {token}")
@@ -36,17 +36,17 @@ def search_my_emails(
     """
     사용자의 최근 메일을 검색하여 읽어옵니다.
     Microsoft 365 (Outlook) 내 메일함에서 최근 이메일을 검색하고 읽어옵니다.
-    
+
     [LLM 에이전트 사용 가이드]
     1. 사용자가 "최근 메일 확인해줘"라고 포괄적으로 요청하면 limit 값의 숫자와 my_email의 사용자 메일주소를 넣어서 호출하세요. limit이 지정되어 있지 않으면 기본값 5로 호출합니다.
     2. 결과는 이메일 제목, 보낸사람, 받은시간의 텍스트 목록으로 반환됩니다.
-    
+
     Args:
         limit: 가져올 이메일의 최대 개수 (기본값: 5개, 최대: 50개)
         my_email: 메일을 조회할 사용자의 이메일 주소 (예: no-reply@microsoft.com). 특정인 지정이 없으면 비워둡니다.
-    return: 
+    return:
         메일의 이메일 제목, 보낸사람, 받은시간의 텍스트 목록으로 반환됩니다. 만약 메일이 없다면 "총 0개의 최근 메일을 찾았습니다" 문자열을 반환 합니다.
-    rtype: str    
+    rtype: str
     """
 
     if my_email == None or my_email=="":
@@ -71,7 +71,7 @@ def search_my_emails(
             f"$top={limit}&"
             f"$filter=from/emailAddress/address ne '{my_email}'&"
             f"$select=subject,sender,receivedDateTime"
-            
+
 
         )
 
@@ -81,7 +81,7 @@ def search_my_emails(
             "Accept" : "application/json",
             "ConsistencyLevel": "eventual"  # Optional: 실시간이 아닌 인덱싱으로 검색 = 데이터가 많은거 조회 할 때 넣는 옵션 속도는 향상되느 정확도가 떨어질 수 있으므로 빼도 됨
         }
-        
+
         # 3. API 호출
         response = requests.get(endpoint,headers=headers)
         response.raise_for_status() # 에러 발생 시 예외 처리
@@ -97,12 +97,12 @@ def search_my_emails(
             sender_address = email.get("sender", {}).get("emailAddress", {}).get("address", "")
             subject = email.get("subject", "(제목 없음)")
             received_time = email.get("receivedDateTime", "")
-            
+
             result_text += f"{i}. 제목: {subject}\n"
             result_text += f"   보낸사람: {sender_name} <{sender_address}>\n"
             result_text += f"   받은시간: {received_time}\n"
             result_text += "-" * 30 + "\n"
-            
+
         return result_text
 
     except Exception as e:
@@ -119,12 +119,12 @@ async def search_unread_mail(
 
     [LLM 에이전트 사용 가이드]
     1. 사용자가 "읽지 않은 메일 확인해줘"라고 포괄적으로 요청하면 호출 하세요
-    2. 이 도구를 호출 할때의 Arguments는 없습니다. 
+    2. 이 도구를 호출 할때의 Arguments는 없습니다.
     3. 결과는 읽지 않은 메일의 이메일 제목, 보낸사람, 받은시간의 텍스트 목록으로 반환됩니다. 만약 읽지안은 메일이 없다면 "읽지 않은 메일이 없습니다." 문자열을 반환 합니다.
-    
+
     Args:
         my_email: 메일을 조회할 사용자의 이메일 주소 (예: no-reply@microsoft.com). 특정인 지정이 없으면 비워둡니다.
-    return: 
+    return:
         메일의 이메일 제목, 보낸사람, 받은시간의 텍스트 목록으로 반환됩니다. 만약 읽지안은 메일이 없다면 "읽지 않은 메일이 없습니다." 문자열을 반환 합니다.
     rtype: str
     """
@@ -157,33 +157,33 @@ async def search_unread_mail(
         # 3. API 호출
         async with httpx.AsyncClient() as client:
             response = await client.get(endpoint, headers=headers)
-        
+
         if response.status_code == 200:
-            
+
             print(json.dumps(response.json(), indent=2, ensure_ascii=False))
 
             emails = response.json().get("value",[])
 
             if len(emails)==0:
                 return "읽지 않은 메일이 없습니다."
-            
+
             result_text = f"총 {len(emails)}개의 최근 메일을 찾았습니다:\n\n"
             for i, email in enumerate(emails, 1):
                 sender_name = email.get("sender", {}).get("emailAddress", {}).get("name", "알 수 없음")
                 sender_address = email.get("sender", {}).get("emailAddress", {}).get("address", "")
                 subject = email.get("subject", "(제목 없음)")
                 received_time = email.get("receivedDateTime", "")
-                
+
                 result_text += f"{i}. 제목: {subject}\n"
                 result_text += f"   보낸사람: {sender_name} <{sender_address}>\n"
                 result_text += f"   받은시간: {received_time}\n"
                 result_text += "-" * 30 + "\n"
-                
+
             return result_text
-        else:     
+        else:
             # 에러 처리
             print(f"Error: {response.status_code}, {response.text}")
-            response.raise_for_status() # 에러 발생 시 예외 처리    
+            response.raise_for_status() # 에러 발생 시 예외 처리
 
     except Exception as e:
         raise RuntimeError(f"메일 로드 실패: {str(e)}")
@@ -202,11 +202,11 @@ async def send_my_email(
     Microsoft 365 (Outlook)의 사용자의 메일주소로 메일을 발송 합니다.
 
     [LLM 에이전트 사용 가이드]
-    1. 사용자가 "메일을 보내줘" 또는 "~에게 메일을 보내주세요"등 메일을 작성을 요청 했을 때 사용합니다. 
+    1. 사용자가 "메일을 보내줘" 또는 "~에게 메일을 보내주세요"등 메일을 작성을 요청 했을 때 사용합니다.
     2. 이 도구를 사용 할 때, 'to_address', 'subject', 'body' 이 세 가지 필드는 반드시 채워져야 하는 **필수값**입니다.
     3. 이 도구를 통해 보내는 메일의 제목(subject)와 본문(body)는 반드시 UTF-8 인코딩으로 채워져야 합니다.
 
-    Args: 
+    Args:
         - to_address (str): 받는 사람의 이메일주소 입니다. 만약 받는사람이 여려명일 경우 콤마(.)로 구분합니다. (예: abc@company.com,def@compay.com). 이 필드는 반드시 채워야 하는 **필수값**입니다.
         - subject (str): 발송할 메일의 제목입니다. 필드는 반드시 채워야 하는 **필수값**입니다.
         - body (str): 발송할 메일의 본문 내용입니다. 필드는 반드시 채워야 하는 **필수값**입니다.
@@ -221,12 +221,12 @@ async def send_my_email(
         RuntimeError: 네트워크 오류나 API 인증 실패 시 발생합니다.
     """
 
-    # token 가져오기 
+    # token 가져오기
     token = get_access_token()
 
     if my_email is None or my_email=="":
         my_email=DEFAULT_USER_EMAIL
-    
+
     # 본문 파싱: 줄바꿈 문자 변환
     # html_body = body.replace('\r\n','<br/>').replace('\n','<br/>')
     text_body = f"{body}\n본 메일은 MCP에 의하여 발송되었습니다."
@@ -255,8 +255,8 @@ async def send_my_email(
         },
         "toRecipients": to_address_list
     }
-    
-    # 참조자(CC)가 있으면 참조메일주소 넣기 
+
+    # 참조자(CC)가 있으면 참조메일주소 넣기
     if cc_address is not None and cc_address != "":
         cc_address_list = []
 
@@ -276,7 +276,7 @@ async def send_my_email(
         # CC 주소가 있으면 추가
         if cc_address_list:
             message["ccRecipients"] = cc_address_list
-    
+
     payload = {
         "message": message,
         "saveToSentItems": True
@@ -319,6 +319,6 @@ async def send_my_email(
 if __name__ == "__main__":
     print("🚀 FastMCP MS 메일 서버를 HTTP(SSE) 모드로 시작합니다...")
     print("Endpoint: http://localhost:8000/mcp")
-    
+
     # stdio 대신 sse 전송 방식을 사용하여 8000번 포트에서 실행
     mcp.run(transport="streamable-http", port=8000)
