@@ -286,7 +286,8 @@ async def send_my_email(
     endpoint = f"https://graph.microsoft.com/v1.0/users/{my_email}/sendMail"
     headers = {
         "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json; charset=utf-8"
+        "Content-Type": "application/json; charset=utf-8",
+        "User-Agent": "Leodev901-Corp-Internal-Mailer/1.0 (for Business)"
     }
 
     try:
