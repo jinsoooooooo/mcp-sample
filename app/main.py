@@ -195,6 +195,90 @@ async def search_unread_mail(
         raise RuntimeError(f"메일 로드 실패: {str(e)}")
 
 
+
+@mcp.tool()
+async def search_emails_by_keyword(
+    keyword: Annotated[str, "검색할 키워드(예: invoice, 회의, 장애)"],
+    limit: Annotated[int, "조회 개수(1~50)"] = 10,
+    my_email: Annotated[Optional[str], "조회할 사용자 메일. 비우면 DEFAULT_USER_EMAIL 사용"] = None,
+) -> str:
+    """
+    키워드 기반으로 사용자의 최근 메일을 검색하여 읽어옵니다.
+    Microsoft 365 (Outlook) 내 메일함에서 키워드로 이메일을 검색하고 읽어옵니다.
+
+    [LLM 에이전트 사용 가이드]
+    1. 사용자가 "OOO 메일 확인해줘" 또는 "메일에서 OOO 검색 해줘"라고 포괄적으로 메일함에서 검색 요청하면 키워드화 함께 limit 값의 숫자와 my_email의 사용자 메일주소를 넣어서 호출하세요. limit이 지정되어 있지 않으면 기본값 5로 호출합니다.
+    2. 결과는 이메일 제목, 보낸사람, 받은시간의 텍스트 목록으로 반환됩니다.
+
+    Args:
+        - keyword (str): 사용자가 검색할 키워드입니다. 만약 키워드가 여러개 라면 콤마(,)로 구분합니다. (예: invoice, 회의, 장애))
+        - limit (str): 가져올 이메일의 최대 개수 (기본값: 5개, 최대: 50개)
+        - my_email (str): 메일을 조회할 사용자의 이메일 주소 (예: no-reply@microsoft.com). 특정인 지정이 없으면 비워둡니다.
+    return:
+        메일의 이메일 제목, 보낸사람, 받은시간의 텍스트 목록으로 반환됩니다. 만약 메일이 없다면 "총 0개의 최근 메일을 찾았습니다" 문자열을 반환 합니다.
+    rtype: str
+    """
+    try:
+        if my_email is None or my_email == "":
+            my_email = DEFAULT_USER_EMAIL
+
+        clean_keyword = keyword.strip()
+        if not clean_keyword:
+            return "keyword는 비어 있을 수 없습니다."
+
+        safe_limit = max(1, min(limit, 50))
+        token = get_access_token()
+
+        endpoint = f"https://graph.microsoft.com/v1.0/users/{my_email}/messages"
+        params = {
+            # 왜: $search는 따옴표로 감싼 검색어를 요구하므로 쿼리 문자열을 명시적으로 구성한다.
+            "$search": f"\"{clean_keyword}\"",
+            "$top": safe_limit,
+            "$select": "id,subject,sender,receivedDateTime,bodyPreview",
+        }
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+            # 왜: Graph에서 $search 사용 시 ConsistencyLevel 헤더가 필요하다.
+            "ConsistencyLevel": "eventual",
+        }
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(endpoint, headers=headers, params=params)
+
+        response.raise_for_status()
+        emails = response.json().get("value", [])
+
+        if not emails:
+            return f"'{clean_keyword}' 키워드로 검색된 메일이 없습니다."
+
+        lines = [f"키워드 '{clean_keyword}' 검색 결과: {len(emails)}건\n"]
+        for idx, email in enumerate(emails, 1):
+            subject = email.get("subject", "(제목 없음)")
+            sender = email.get("sender", {}).get("emailAddress", {}).get("address", "")
+            received = email.get("receivedDateTime", "")
+            message_id = email.get("id", "")
+            preview = (email.get("bodyPreview", "") or "").replace("\n", " ").strip()
+            preview = preview[:120]
+
+            lines.append(f"{idx}. 제목: {subject}")
+            lines.append(f"   message_id: {message_id}")
+            lines.append(f"   보낸사람: {sender}")
+            lines.append(f"   받은시간: {received}")
+            lines.append(f"   미리보기: {preview}")
+            lines.append("-" * 30)
+
+        return "\n".join(lines)
+
+    except httpx.HTTPStatusError as e:
+        raise RuntimeError(
+            f"키워드 메일 검색 실패(HTTP {e.response.status_code}): {e.response.text}"
+        )
+    except Exception as e:
+        raise RuntimeError(f"키워드 메일 검색 실패: {str(e)}")
+
+
+
 @mcp.tool()
 async def send_my_email(
     to_address: Annotated[str,"받는 사람의 이메일주소 입니다. 만약 받는사람이 여려명일 경우 콤마(.)로 구분합니다. (예: abc@company.com,def@compay.com). \n이 필드는 반드시 채워야 하는 **필수값**입니다. "],
@@ -499,6 +583,238 @@ async def delete_calendar_event(
         )
     except Exception as e:
         raise RuntimeError(f"일정 삭제 실패: {str(e)}")
+
+
+
+@mcp.tool()
+async def update_calendar_event(
+    event_id: Annotated[str, "수정할 일정의 event id"],
+    my_email: Annotated[Optional[str], "사용자 메일. 비우면 DEFAULT_USER_EMAIL 사용"] = None,
+    subject: Annotated[Optional[str], "일정 제목"] = None,
+    start_iso: Annotated[Optional[str], "시작 시간 ISO 8601"] = None,
+    end_iso: Annotated[Optional[str], "종료 시간 ISO 8601"] = None,
+    attendees: Annotated[Optional[str], "참석자 메일(콤마 구분)"] = None,
+    location: Annotated[Optional[str], "장소"] = None,
+    body: Annotated[Optional[str], "설명"] = None,
+    timezone: Annotated[str, "타임존"] = "Asia/Seoul",
+) -> str:
+    """
+    기존 일정을 부분 수정합니다.
+    """
+    try:
+        if my_email is None or my_email == "":
+            my_email = DEFAULT_USER_EMAIL
+
+        token = get_access_token()
+
+        patch_payload: dict = {}
+
+        # 왜: 입력된 필드만 patch에 넣어 불필요한 덮어쓰기를 방지한다.
+        if subject is not None:
+            patch_payload["subject"] = subject
+
+        if start_iso is not None:
+            patch_payload["start"] = {"dateTime": start_iso, "timeZone": timezone}
+
+        if end_iso is not None:
+            patch_payload["end"] = {"dateTime": end_iso, "timeZone": timezone}
+
+        if location is not None:
+            patch_payload["location"] = {"displayName": location}
+
+        if body is not None:
+            patch_payload["body"] = {"contentType": "Text", "content": body}
+
+        if attendees is not None:
+            attendees_list = []
+            for addr in attendees.split(","):
+                clean = addr.strip()
+                if clean:
+                    attendees_list.append(
+                        {
+                            "emailAddress": {"address": clean},
+                            "type": "required",
+                        }
+                    )
+            patch_payload["attendees"] = attendees_list
+
+        if not patch_payload:
+            return "수정할 필드가 없습니다. (subject/start_iso/end_iso/attendees/location/body 중 1개 이상 필요)"
+
+        endpoint = f"https://graph.microsoft.com/v1.0/users/{my_email}/events/{event_id}"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.patch(endpoint, headers=headers, json=patch_payload)
+
+        response.raise_for_status()
+        return f"일정 수정 완료: event_id={event_id}"
+
+    except httpx.HTTPStatusError as e:
+        raise RuntimeError(
+            f"일정 수정 실패(HTTP {e.response.status_code}): {e.response.text}"
+        )
+    except Exception as e:
+        raise RuntimeError(f"일정 수정 실패: {str(e)}")
+
+
+
+
+
+@mcp.tool()
+async def list_todo_lists(
+    my_email: Annotated[Optional[str], "조회할 사용자 메일. 비우면 DEFAULT_USER_EMAIL 사용"] = None
+) -> str:
+    """
+    Microsoft To Do 목록(task lists)을 조회합니다.
+    """
+    try:
+        if my_email is None or my_email == "":
+            my_email = DEFAULT_USER_EMAIL
+
+        token = get_access_token()
+        endpoint = f"https://graph.microsoft.com/v1.0/users/{my_email}/todo/lists"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+        }
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(endpoint, headers=headers)
+
+        response.raise_for_status()
+        lists = response.json().get("value", [])
+
+        if not lists:
+            return "To Do 목록이 없습니다."
+
+        lines = [f"총 {len(lists)}개의 To Do 목록을 찾았습니다.\n"]
+        for idx, item in enumerate(lists, 1):
+            lines.append(f"{idx}. displayName: {item.get('displayName', '')}")
+            lines.append(f"   list_id: {item.get('id', '')}")
+            lines.append("-" * 30)
+
+        return "\n".join(lines)
+
+    except httpx.HTTPStatusError as e:
+        raise RuntimeError(
+            f"To Do 목록 조회 실패(HTTP {e.response.status_code}): {e.response.text}"
+        )
+    except Exception as e:
+        raise RuntimeError(f"To Do 목록 조회 실패: {str(e)}")
+
+
+@mcp.tool()
+async def create_todo_task(
+    task_list_id: Annotated[str, "작업을 생성할 To Do 목록 id"],
+    title: Annotated[str, "작업 제목"],
+    my_email: Annotated[Optional[str], "사용자 메일. 비우면 DEFAULT_USER_EMAIL 사용"] = None,
+    body: Annotated[Optional[str], "작업 설명"] = None,
+    due_iso: Annotated[Optional[str], "기한 ISO 8601 날짜/시간 (예: 2026-02-20T18:00:00)"] = None,
+    timezone: Annotated[str, "타임존"] = "Asia/Seoul",
+) -> str:
+    """
+    To Do 작업을 생성합니다.
+    """
+    try:
+        if my_email is None or my_email == "":
+            my_email = DEFAULT_USER_EMAIL
+
+        token = get_access_token()
+
+        payload = {"title": title}
+        if body is not None:
+            payload["body"] = {"content": body, "contentType": "text"}
+        if due_iso is not None:
+            payload["dueDateTime"] = {"dateTime": due_iso, "timeZone": timezone}
+
+        endpoint = f"https://graph.microsoft.com/v1.0/users/{my_email}/todo/lists/{task_list_id}/tasks"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(endpoint, headers=headers, json=payload)
+
+        response.raise_for_status()
+        created = response.json()
+
+        return (
+            f"To Do 생성 완료\n"
+            f"- task_id: {created.get('id', '')}\n"
+            f"- title: {created.get('title', title)}\n"
+            f"- status: {created.get('status', '')}"
+        )
+
+    except httpx.HTTPStatusError as e:
+        raise RuntimeError(
+            f"To Do 생성 실패(HTTP {e.response.status_code}): {e.response.text}"
+        )
+    except Exception as e:
+        raise RuntimeError(f"To Do 생성 실패: {str(e)}")
+
+
+@mcp.tool()
+async def list_todo_tasks(
+    task_list_id: Annotated[str, "조회할 To Do 목록 id"],
+    my_email: Annotated[Optional[str], "사용자 메일. 비우면 DEFAULT_USER_EMAIL 사용"] = None,
+    limit: Annotated[int, "조회 개수(1~100)"] = 30,
+) -> str:
+    """
+    특정 To Do 목록의 작업을 조회합니다.
+    """
+    try:
+        if my_email is None or my_email == "":
+            my_email = DEFAULT_USER_EMAIL
+
+        safe_limit = max(1, min(limit, 100))
+        token = get_access_token()
+
+        endpoint = f"https://graph.microsoft.com/v1.0/users/{my_email}/todo/lists/{task_list_id}/tasks"
+        params = {
+            "$top": safe_limit,
+            "$select": "id,title,status,createdDateTime,lastModifiedDateTime,dueDateTime",
+        }
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+        }
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(endpoint, headers=headers, params=params)
+
+        response.raise_for_status()
+        tasks = response.json().get("value", [])
+
+        if not tasks:
+            return "해당 목록에 작업이 없습니다."
+
+        lines = [f"총 {len(tasks)}개의 작업을 찾았습니다.\n"]
+        for idx, task in enumerate(tasks, 1):
+            lines.append(f"{idx}. {task.get('title', '(제목 없음)')}")
+            lines.append(f"   task_id: {task.get('id', '')}")
+            lines.append(f"   status: {task.get('status', '')}")
+            lines.append(
+                f"   due: {task.get('dueDateTime', {}).get('dateTime', '') if task.get('dueDateTime') else ''}"
+            )
+            lines.append("-" * 30)
+
+        return "\n".join(lines)
+
+    except httpx.HTTPStatusError as e:
+        raise RuntimeError(
+            f"To Do 조회 실패(HTTP {e.response.status_code}): {e.response.text}"
+        )
+    except Exception as e:
+        raise RuntimeError(f"To Do 조회 실패: {str(e)}")
+
+
+
+
 
 
 if __name__ == "__main__":
