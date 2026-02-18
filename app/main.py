@@ -321,6 +321,184 @@ async def send_my_email(
 
 
 
+@mcp.tool()
+async def create_calendar_event(
+    subject: Annotated[str, "일정 제목"],
+    start_datetime: Annotated[str, "시작 시간 (ISO 8601, 예: 2026-02-20T10:00:00)"],
+    end_datetime: Annotated[str, "종료 시간 (ISO 8601, 예: 2026-02-20T11:00:00)"],
+    my_email: Annotated[Optional[str], "일정을 생성할 사용자 메일. 비우면 DEFAULT_USER_EMAIL 사용"] = None,
+    attendees: Annotated[Optional[str], "참석자 메일(콤마 구분)"] = None,
+    location: Annotated[Optional[str], "장소"] = None,
+    body: Annotated[Optional[str], "일정 설명"] = None,
+    timezone: Annotated[str, "타임존 (예: Asia/Seoul)"] = "Asia/Seoul",
+) -> str:
+    """
+    사용자의 메일의 캘린더 일정을 생성하는 도구 입니다.
+    Microsoft 365 (Outlook)의 사용자 메일주소를 사용하에 일정을 생성하고 사용자를 초대 할 수 있습니다.
+
+    [LLM 에이전트 사용 가이드]
+    1. 사용자가 "일정을 생성해줘" 또는 "일정을 등록해줘" 등, 일정을 생성 하는 요청상하이 있을 때 이 도구를 사용 합니다.
+    2. 이 도구를 사용 할 때, 'subject', 'start_datetime', 'end_datetime' 이 세 가지 필드는 반드시 채워져야 하는 **필수값**입니다.
+    3. 이 도구를 통해 보내는 메일의 제목(subject)는 반드시 UTF-8 인코딩으로 채워져야 합니다.
+    4. 'timezone'에 특정 시간대를 설정하지 않은경우 기본 설정으로 'Asia/Seoul' 시간대를 사룡 합니다.
+
+    Args:
+        - subject (str): 생성 할 일정의 제목입니다. 이 필드는 반드시 채워야 하는 **필수값**입니다.
+        - start_datetime (str): 생성할 일정의 "시작시간" 입니다. 입력 형식은 ISO 8601 형식으로 예: 2026-02-20T10:00:00 으로 입력합니다. 필드는 반드시 채워야 하는 **필수값**입니다.
+        - end_datetime (str): 생성할 일정의 "종료시간" 입니다. 입력 형식은 ISO 8601 형식으로 예: 2026-02-20T10:00:00 으로 입력합니다. 필드는 반드시 채워야 하는 **필수값**입니다.
+        - my_email (str, optional): 일정을 사용할 사용자의 메일주소 입니다. (예: no-reply@microsoft.com). 특정 사용자가 지정되어 있지 않으면 이 필드는 비워둡니다.
+        - attendees (str, optional): 일정을 함께 참조할 참석지의 이메일 주소 입니다. 만약 참석자가 여려명일 경우 콤마(.)로 구분합니다. (예: abc@company.com,def@compay.com). 참석자가 특정되어 있지 않으면 이 필드는 비워둡니다.
+        - location (str, optional): 등록할 일정의 장소(주소) 입니다.
+        - body (str, optional): 생성할 일정의 설명(본문내용) 입니다. 이 필드는 반드시 UTF-8 인코딩으로 채워져야 합니다.
+        - timezone (str, optional): 타임존 (예: Asia/Seoul)"] = "Asia/Seoul
+
+    Returns:
+        str: 일정 생성 결과를 알리는 문자열을 반환합니다.
+
+    """
+    try:
+        if my_email is None or my_email == "":
+            my_email = DEFAULT_USER_EMAIL
+
+        token = get_access_token()
+
+        # 왜: 참석자 입력을 문자열로 받아도 Graph 형식으로 안전하게 변환하기 위함
+        attendees_list = []
+        if attendees:
+            for addr in attendees.split(","):
+                clean = addr.strip()
+                if clean:
+                    attendees_list.append(
+                        {
+                            "emailAddress": {"address": clean},
+                            "type": "required",
+                        }
+                    )
+
+        payload = {
+            "subject": subject,
+            "start": {"dateTime": start_datetime, "timeZone": timezone},
+            "end": {"dateTime": end_datetime, "timeZone": timezone},
+            "body": {"contentType": "Text", "content": body or ""},
+        }
+
+        if attendees_list:
+            payload["attendees"] = attendees_list
+        if location:
+            payload["location"] = {"displayName": location}
+
+        endpoint = f"https://graph.microsoft.com/v1.0/users/{my_email}/events"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(endpoint, headers=headers, json=payload)
+
+        response.raise_for_status()
+        created = response.json()
+
+        return (
+            f"일정 생성 완료\n"
+            f"- subject: {created.get('subject', subject)}\n"
+            f"- event_id: {created.get('id', '')}\n"
+            f"- start: {created.get('start', {}).get('dateTime', start_datetime)}\n"
+            f"- end: {created.get('end', {}).get('dateTime', end_datetime)}"
+        )
+
+    except Exception as e:
+        raise RuntimeError(f"일정 생성 실패: {str(e)}")
+
+
+@mcp.tool()
+async def list_calendar_events(
+    start_datetime: Annotated[str, "조회 시작 시간 (ISO 8601, 예: 2026-02-20T00:00:00Z)"],
+    end_datetime: Annotated[str, "조회 종료 시간 (ISO 8601, 예: 2026-02-21T00:00:00Z)"],
+    limit: Annotated[int, "조회 개수(1~50)"] = 20,
+    my_email: Annotated[Optional[str], "조회할 사용자 메일. 비우면 DEFAULT_USER_EMAIL 사용"] = None,
+) -> str:
+    """
+    기간 사용자의 메일의 캘린더 일정을 캘린더 일정을 조회하는 도구 입니다.
+    Microsoft 365 (Outlook)의 사용자 메일주소를 사용하여 일정을 조회 할 수 있습니다.
+
+    [LLM 에이전트 사용 가이드]
+    1. 사용자가 "일정을 조회해줘" 또는 "일정을 확인해줘" 등, 일정을 생성 하는 요청상하이 있을 때 이 도구를 사용 합니다.
+    2. 이 도구를 사용 할 때, 'start_datetime', 'end_datetime' 이 두 가지 필드는 반드시 채워져야 하는 **필수값**입니다.
+    """
+    try:
+        if my_email is None or my_email == "":
+            my_email = DEFAULT_USER_EMAIL
+
+        safe_limit = max(1, min(limit, 50))
+        token = get_access_token()
+
+        endpoint = f"https://graph.microsoft.com/v1.0/users/{my_email}/calendarView"
+        params = {
+            "startDateTime": start_datetime,
+            "endDateTime": end_datetime,
+            "$top": safe_limit,
+            "$orderby": "start/dateTime",
+            "$select": "id,subject,start,end,organizer,location",
+        }
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+        }
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(endpoint, headers=headers, params=params)
+
+        response.raise_for_status()
+        events = response.json().get("value", [])
+
+        if not events:
+            return "조회 기간 내 일정이 없습니다."
+
+        lines = [f"총 {len(events)}개의 일정을 찾았습니다.\n"]
+        for idx, event in enumerate(events, 1):
+            lines.append(f"{idx}. {event.get('subject', '(제목 없음)')}")
+            lines.append(f"   id: {event.get('id', '')}")
+            lines.append(f"   start: {event.get('start', {}).get('dateTime', '')}")
+            lines.append(f"   end: {event.get('end', {}).get('dateTime', '')}")
+            lines.append(f"   location: {event.get('location', {}).get('displayName', '')}")
+            lines.append("-" * 30)
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        raise RuntimeError(f"일정 조회 실패: {str(e)}")
+
+
+@mcp.tool()
+async def delete_calendar_event(
+    event_id: Annotated[str, "삭제할 일정의 event id"],
+    my_email: Annotated[Optional[str], "사용자 메일. 비우면 DEFAULT_USER_EMAIL 사용"] = None,
+) -> str:
+    """
+    기존 일정을 삭제합니다.
+    """
+    try:
+        if my_email is None or my_email == "":
+            my_email = DEFAULT_USER_EMAIL
+
+        token = get_access_token()
+
+        endpoint = f"https://graph.microsoft.com/v1.0/users/{my_email}/events/{event_id}"
+        headers = {"Authorization": f"Bearer {token}"}
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.delete(endpoint, headers=headers)
+
+        response.raise_for_status()
+        return f"일정 삭제 완료: event_id={event_id}"
+
+    except httpx.HTTPStatusError as e:
+        raise RuntimeError(
+            f"일정 삭제 실패(HTTP {e.response.status_code}): {e.response.text}"
+        )
+    except Exception as e:
+        raise RuntimeError(f"일정 삭제 실패: {str(e)}")
 
 
 if __name__ == "__main__":
