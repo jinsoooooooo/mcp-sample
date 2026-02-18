@@ -5,10 +5,16 @@ import httpx
 from typing import Optional, Annotated
 from auth import get_access_token
 import json
+from logger_config import setup_logging, get_logger
+from starlette.middleware import Middleware
+from http_middleware import RequestIdMiddleware
+from mcp_midleware import MCPLoggingMiddleware
+
 
 AZURE_CLIENT_ID = settings.AZURE_CLIENT_ID
 AZURE_TENANT_ID = settings.AZURE_TENANT_ID
 DEFAULT_USER_EMAIL = settings.DEFAULT_USER_EMAIL
+LOG_LEVEL = settings.LOG_LEVEL
 
 mcp = FastMCP("Demo FastMCP")
 
@@ -321,5 +327,23 @@ if __name__ == "__main__":
     print("🚀 FastMCP MS 메일 서버를 HTTP(SSE) 모드로 시작합니다...")
     print("Endpoint: http://localhost:8000/mcp")
 
+    setup_logging(LOG_LEVEL)
+    logger = get_logger("app.main")
+    logger.info("FastMCP 서버를 HTTP(SSE) 모드로 시작 합니다.")
+    logger.info("Endpoint: http://localhost:8000/mcp")
+    logger.debug("Deub 로그 활성화 상태 입니다.")
+
+    mcp.add_middleware(MCPLoggingMiddleware())
+
     # stdio 대신 sse 전송 방식을 사용하여 8000번 포트에서 실행
-    mcp.run(transport="streamable-http", port=8000)
+    mcp.run(
+        transport="streamable-http",
+        port=8000,
+        middleware=[
+            Middleware(RequestIdMiddleware),
+        ],
+        uvicorn_config={"access_log": True
+                        # "log_config": None,  # uvicorn 기본 로깅 덮어쓰기 비활성화
+                        },
+
+        )
