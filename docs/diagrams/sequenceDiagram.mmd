@@ -1,0 +1,24 @@
+---
+config:
+    look: handDrawon
+    theme: redux-color
+---
+sequenceDiagram
+  participant U as User(채팅)
+  participant AG as AI Agent
+  participant MCP as Outlook MCP Gateway
+  participant G as Microsoft Graph
+
+  U->>AG: "이 메일 스레드 핵심 요약하고 답장 초안 만들어줘"
+  AG->>MCP: GET_MESSAGE (messageId)
+  MCP->>G: /users/{actingUser}/messages/{id}
+  G-->>MCP: message payload
+  MCP-->>AG: message
+
+  AG->>AG: 요약/답장 초안 생성(LLM)
+  AG->>MCP: CREATE_DRAFT_REPLY (messageId, draftBody)
+  MCP->>G: createReply or draft API
+  G-->>MCP: draftId
+  MCP-->>AG: draftId
+
+  AG-->>U: 요약 + 초안 내용(또는 초안 링크/ID)

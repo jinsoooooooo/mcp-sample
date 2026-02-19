@@ -1,0 +1,25 @@
+---
+config:
+    look: handDrawon
+    theme: redux-color
+---
+
+flowchart LR
+
+  U[임직원\n사내 채팅 UI] -->|자연어| A[AI Agent Orchestrator\n-의도 파악/플랜 생성]
+  A -->|Tool 호출| TR[Tool Router\n-Core/Advanced/Admin Pack]
+  TR -->|MCP JSON-RPC| MG[Outlook MCP Gateway\n 사내 구현 권장]
+
+  MG --> PE[Policy & Scope Engine\n-요청자/대상자/공용함\n접근 통제]
+  MG --> AL[Audit Log / Telemetry\n누가/언제/무엇을/대상]
+
+  PE -->|App-only Token<br>테넌트 전권 가능| G[Microsoft Graph API]
+  G --> EXO[Exchange Online\nMail/Calendar/Settings]
+  G --> ENTRA[Entra ID\nUsers/Directory]
+
+  subgraph OPT[옵션: 자동 브리핑/알림]
+    MG --> SY[Delta/Trigger Worker]
+    SY -->|변경분 수집| G
+    SY --> A
+  end
+

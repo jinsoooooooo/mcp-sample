@@ -1,0 +1,25 @@
+---
+config:
+    look: handDrawon
+    theme: redux-color
+---
+sequenceDiagram
+  participant U as User(채팅)
+  participant AG as AI Agent
+  participant MCP as Outlook MCP Gateway
+  participant G as Microsoft Graph
+
+  U->>AG: "다음주 화요일 A,B랑 1시간 가능한 슬롯 찾아서 잡아줘"
+  AG->>MCP: GET_SCHEDULE (attendees, timeRange)
+  MCP->>G: /users/{actingUser}/calendar/getSchedule
+  G-->>MCP: free/busy
+  MCP-->>AG: free/busy
+
+  AG->>AG: 가능한 슬롯 계산(사내 로직)
+  AG-->>U: "가능 후보 3개: 10:00, 14:00, 16:00"
+  U->>AG: "14:00으로 잡아줘"
+  AG->>MCP: CALENDAR_CREATE_EVENT (slot, attendees, subject)
+  MCP->>G: /users/{actingUser}/events
+  G-->>MCP: eventId
+  MCP-->>AG: eventId
+  AG-->>U: "회의 생성 완료"
