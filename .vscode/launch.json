@@ -5,9 +5,11 @@
       "name": "MCP: Debug Server",
       "type": "python",
       "request": "launch",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
       "program": "${workspaceFolder}/app/main.py",
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
+      // "console": "internalConsole",
       "envFile": "${workspaceFolder}/.env",
       "justMyCode": false
     }
