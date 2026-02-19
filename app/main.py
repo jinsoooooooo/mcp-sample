@@ -278,6 +278,76 @@ async def search_emails_by_keyword(
         raise RuntimeError(f"키워드 메일 검색 실패: {str(e)}")
 
 
+@mcp.tool()
+async def search_emails_by_sender(
+    sender_email: Annotated[str, "조회할 발신자 이메일 (예: user@company.com)"],
+    limit: Annotated[int, "조회 개수(1~50)"] = 10,
+    my_email: Annotated[Optional[str], "조회할 사용자 메일. 비우면 DEFAULT_USER_EMAIL 사용"] = None,
+) -> str:
+    """
+    사용자의 메일함에서 특정 발신자가 보낸 메일을 조회합니다.
+    Microsoft 365 (Outlook) 내 메일함에서 발신자의 이메일주소로 메일을 검색하고 읽어옵니다.
+    """
+    try:
+        if my_email is None or my_email == "":
+            my_email = DEFAULT_USER_EMAIL
+
+        clean_sender = sender_email.strip().lower()
+        if not clean_sender:
+            return "sender_email은 비어 있을 수 없습니다."
+
+        safe_limit = max(1, min(limit, 50))
+        token = get_access_token()
+
+        endpoint = f"https://graph.microsoft.com/v1.0/users/{my_email}/messages"
+        params = {
+            "$top": safe_limit,
+            # "$orderby": "receivedDateTime desc",
+            "$select": "id,subject,sender,receivedDateTime,bodyPreview",
+            "$filter": f"from/emailAddress/address eq '{clean_sender}'",
+        }
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+        }
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(endpoint, headers=headers, params=params)
+
+        response.raise_for_status()
+        emails = response.json().get("value", [])
+
+        if not emails:
+            return f"발신자 '{clean_sender}' 메일이 없습니다."
+
+        # 왜: Graph orderby를 제거했으므로 최신순은 애플리케이션에서 명시적으로 보장
+        emails = sorted(
+            emails,
+            key=lambda x: x.get("receivedDateTime", ""),
+            reverse=True,
+        )[:safe_limit]
+
+        lines = [f"발신자 '{clean_sender}' 메일 {len(emails)}건\n"]
+        for i, email in enumerate(emails, 1):
+            subject = email.get("subject", "(제목 없음)")
+            message_id = email.get("id", "")
+            received = email.get("receivedDateTime", "")
+            preview = (email.get("bodyPreview", "") or "").replace("\n", " ").strip()[:120]
+
+            lines.append(f"{i}. 제목: {subject}")
+            lines.append(f"   message_id: {message_id}")
+            lines.append(f"   받은시간: {received}")
+            lines.append(f"   미리보기: {preview}")
+            lines.append("-" * 30)
+
+        return "\n".join(lines)
+
+    except httpx.HTTPStatusError as e:
+        raise RuntimeError(
+            f"발신자 메일 조회 실패(HTTP {e.response.status_code}): {e.response.text}"
+        )
+    except Exception as e:
+        raise RuntimeError(f"발신자 메일 조회 실패: {str(e)}")
 
 @mcp.tool()
 async def send_my_email(
