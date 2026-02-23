@@ -114,6 +114,173 @@ def search_my_emails(
     except Exception as e:
         raise RuntimeError(f"메일 로드 실패: {str(e)}")
 
+@mcp.tool()
+async def get_messages(
+    folder: Annotated[str, "조회할 메일함 폴더 (예: 'inbox', 'sentitems', 'archive')"] = "inbox",
+    top: Annotated[int, "조회 개수 (1~50, 기본값: 10)"] = 10,
+    filter_query: Annotated[Optional[str], "OData 지원 필터링 문자열 (MS Graph API 호환). 예: 'receivedDateTime ge 2026-02-19T00:00:00Z', 'isRead eq false'"] = None,
+    my_email: Annotated[Optional[str], "메일을 조회할 사용자의 이메일 주소. 특정인 지정이 없으면 비워둡니다."] = None
+) -> str:
+    """
+    특정 폴더에서 메일 목록을 조회합니다. 필터링 조건을 적용할 수 있습니다.
+
+    [LLM 에이전트 사용 가이드]
+    1. 사용자가 메일 목록 조회를 요청할 때 사용합니다.
+    2. 필터링이 필요한 경우 OData 포맷 문자열을 생성해 `filter_query`에 넣습니다. (예: 어제부터 온 메일: "receivedDateTime ge 2026-02-19T00:00:00Z", 중요한 메일: "importance eq 'high'", 복합 조건: "isRead eq false and importance eq 'high'")
+
+    Args:
+        - folder (str): "inbox", "sentitems", "archive" 등.
+        - top (int): 조회할 개수 (최대 50).
+        - filter_query (str, optional): OData 쿼리 문자열.
+        - my_email (str, optional): 대상 사용자 이메일.
+
+    Returns:
+        str: 다음과 같은 메일 목록 요약 텍스트 형식입니다.
+             총 N개의 메일을 찾았습니다:
+             1. 제목: 금주 주간보고...
+                message_id: A1b2C3...
+                보낸사람: boss@company.com
+                받은시간: 2026-02-19T...
+    """
+    try:
+        if my_email is None or my_email == "":
+            my_email = DEFAULT_USER_EMAIL
+
+        safe_top = max(1, min(top, 50))
+        token = get_access_token()
+
+        endpoint = f"https://graph.microsoft.com/v1.0/users/{my_email}/mailFolders/{folder}/messages"
+
+        params = {
+            "$top": safe_top,
+            "$select": "id,subject,sender,receivedDateTime",
+            "$orderby": "receivedDateTime desc"
+        }
+
+        if filter_query:
+            params["$filter"] = filter_query
+
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+            "ConsistencyLevel": "eventual",
+        }
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(endpoint, headers=headers, params=params)
+
+        if response.status_code != 200:
+            return f"메일 목록 조회 실패(HTTP {response.status_code}): {response.text}"
+
+        emails = response.json().get("value", [])
+
+        if not emails:
+            return f"{folder} 폴더에 조건에 맞는 메일이 없습니다."
+
+        lines = [f"총 {len(emails)}개의 메일을 찾았습니다:\n"]
+        for idx, email in enumerate(emails, 1):
+            subject = email.get("subject", "(제목 없음)")
+            sender = email.get("sender", {}).get("emailAddress", {}).get("address", "알 수 없음")
+            received = email.get("receivedDateTime", "")
+            message_id = email.get("id", "")
+
+            lines.append(f"{idx}. 제목: {subject}")
+            lines.append(f"   message_id: {message_id}")
+            lines.append(f"   보낸사람: {sender}")
+            lines.append(f"   받은시간: {received}")
+            lines.append("-" * 30)
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        raise RuntimeError(f"메일 목록 조회 실패: {str(e)}")
+
+
+@mcp.tool()
+async def get_message_detail_by_id(
+    message_id: Annotated[str, "조회할 원본 메일의 고유 ID. get_messages나 search_emails를 통해 얻은 목록 중 하나를 선택하여 입력합니다."],
+    my_email: Annotated[Optional[str], "메일을 조회할 사용자의 이메일 주소. 특정인 지정이 없으면 비워둡니다."] = None
+) -> str:
+    """
+    특정 원본 메일의 고유 ID를 이용해 해당 이메일의 전체 세부 정보와 첨부파일 메타데이터를 조회합니다.
+
+    [LLM 에이전트 사용 가이드]
+    1. 단일 메일을 상세히 읽어야 할 때 (예: 답장 작성 전 내용 분석, 긴 일러두기 파악, 첨부파일 유무 확인) 사용합니다.
+    2. 이 도구를 호출하기 전에 먼저 `get_messages` 혹은 `search_emails` 도구를 사용하여 목록에서 원하는 메일의 `message_id`를 알아내야 합니다.
+
+    Args:
+        - message_id (str): 대상 메일 고유 ID.
+        - my_email (str, optional): 대상 사용자 이메일.
+
+    Returns:
+        str: 다음과 같이 반환됩니다.
+             제목: 금주 주간보고
+             발신자: boss@company.com
+             수신일시: 2026-02-19T...
+             첨부파일: [보고서.pdf (2.3MB)]
+             본문:
+             (긴 스레드의 전체 텍스트 본문 내용...)
+    """
+    try:
+        if my_email is None or my_email == "":
+            my_email = DEFAULT_USER_EMAIL
+
+        token = get_access_token()
+
+        # 본문을 텍스트로 바로 받기 위해 Prefer: outlook.body-content-type="text" 헤더 활용
+        # 첨부파일 메타데이터 조회를 위해 /attachments 확장 사용
+        endpoint = f"https://graph.microsoft.com/v1.0/users/{my_email}/messages/{message_id}?$expand=attachments($select=name,size)"
+
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+            "Prefer": 'outlook.body-content-type="text"'
+        }
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(endpoint, headers=headers)
+
+        if response.status_code == 404:
+            return f"해당 메일을 찾을 수 없습니다. message_id를 확인해주세요: {message_id}"
+
+        response.raise_for_status()
+
+        email = response.json()
+
+        subject = email.get("subject", "(제목 없음)")
+        sender = email.get("sender", {}).get("emailAddress", {}).get("address", "알 수 없음")
+        received = email.get("receivedDateTime", "")
+        body_content = email.get("body", {}).get("content", "")
+
+        attachments_info = []
+        if email.get("hasAttachments", False):
+            attachments = email.get("attachments", [])
+            for att in attachments:
+                name = att.get("name", "Unknown")
+                size = att.get("size", 0)
+                if size >= 1024 * 1024:
+                    size_str = f"{size / (1024 * 1024):.1f}MB"
+                elif size >= 1024:
+                    size_str = f"{size / 1024:.1f}KB"
+                else:
+                    size_str = f"{size}B"
+                attachments_info.append(f"{name} ({size_str})")
+
+        att_str = f"[{', '.join(attachments_info)}]" if attachments_info else "없음"
+
+        result_text = f"제목: {subject}\n"
+        result_text += f"발신자: {sender}\n"
+        result_text += f"수신일시: {received}\n"
+        result_text += f"첨부파일: {att_str}\n"
+        result_text += "-" * 30 + "\n"
+        result_text += "본문:\n"
+        result_text += body_content
+
+        return result_text
+
+    except Exception as e:
+        raise RuntimeError(f"메일 상세 조회 실패: {str(e)}")
+
 
 @mcp.tool()
 async def search_unread_mail(
@@ -473,6 +640,207 @@ async def send_my_email(
         raise RuntimeError(f"메일 발송 실패: {str(e)}")
 
 
+@mcp.tool()
+async def create_draft(
+    subject: Annotated[str, "메일 제목"],
+    body: Annotated[str, "메일 본문 (HTML 지원)"],
+    to_address: Annotated[str, "수신자 메일 주소 목록 (CSV 형태, 예: abc@company.com,def@company.com)"],
+    cc_address: Annotated[Optional[str], "참조자 메일 주소 목록 (CSV 형태)"] = None,
+    my_email: Annotated[Optional[str], "사용자 메일. 비우면 DEFAULT_USER_EMAIL 사용"] = None
+) -> str:
+    """
+    이메일을 발송하지 않고 임시 보관함(Drafts)에 초안으로 저장합니다.
+
+    [LLM 에이전트 사용 가이드]
+    1. 사용자가 메일 작성을 요청하지만 바로 보내지 말라고 하거나, AI가 작성한 내용을 먼저 검토받아야 할 때 사용합니다. (안전 가드레일)
+    2. 'subject', 'body', 'to_address'는 필수값입니다.
+
+    Args:
+        - subject (str): 메일 제목
+        - body (str): 메일 본문 (HTML 가능)
+        - to_address (str): 콤마(,)로 구분된 수신자 이메일 목록
+        - cc_address (str, optional): 콤마(,)로 구분된 참조자 이메일 목록
+        - my_email (str, optional): 발신자 이메일
+
+    Returns:
+        str: 초안 생성 성공 메시지. (예: "임시 보관함에 초안이 성공적으로 저장되었습니다...")
+    """
+    try:
+        if my_email is None or my_email == "":
+            my_email = DEFAULT_USER_EMAIL
+
+        token = get_access_token()
+
+        text_body = f"{body}\n<br>본 메일 초안은 MCP에 의하여 작성되었습니다."
+
+        to_address_list = []
+        for addr in to_address.split(','):
+            clean_addr = addr.strip()
+            if clean_addr:
+                to_address_list.append({"emailAddress": {"address": clean_addr}})
+
+        message = {
+            "subject": subject,
+            "body": {
+                "contentType": "HTML",
+                "content": text_body
+            },
+            "toRecipients": to_address_list
+        }
+
+        if cc_address:
+            cc_address_list = []
+            for addr in cc_address.split(','):
+                clean_addr = addr.strip()
+                if clean_addr:
+                    cc_address_list.append({"emailAddress": {"address": clean_addr}})
+            if cc_address_list:
+                message["ccRecipients"] = cc_address_list
+
+        endpoint = f"https://graph.microsoft.com/v1.0/users/{my_email}/messages"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(endpoint, headers=headers, json=message)
+
+        if response.status_code == 201:
+            return f"임시 보관함에 초안이 성공적으로 저장되었습니다. (제목: {subject}, 수신자: {to_address}). Outlook에서 확인 후 발송해주세요."
+        else:
+            response.raise_for_status()
+            return "초안 저장 중 오류가 발생했습니다."
+
+    except Exception as e:
+        raise RuntimeError(f"초안 생성 실패: {str(e)}")
+
+
+@mcp.tool()
+async def reply_to_email(
+    message_id: Annotated[str, "원본 메일의 고유 ID (앞서 get_messages나 search_emails로 획득한 값)"],
+    comment: Annotated[str, "회신할 본문 내용 (HTML 지원)"],
+    reply_all: Annotated[bool, "전체 회신 여부 (기본값: False)"] = False,
+    my_email: Annotated[Optional[str], "사용자 메일. 비우면 DEFAULT_USER_EMAIL 사용"] = None
+) -> str:
+    """
+    기존 메일 스레드에 답장을 보냅니다.
+
+    [LLM 에이전트 사용 가이드]
+    1. 특정 수신 메일에 대해 회신(Reply)할 때 사용합니다.
+    2. 'message_id'와 'comment'는 필수값입니다.
+    3. 전체 회신을 하려면 `reply_all`을 True로 설정합니다.
+
+    Args:
+        - message_id (str): 원본 메일 ID
+        - comment (str): 회신할 본문
+        - reply_all (bool, optional): 전체 회신 여부
+        - my_email (str, optional): 사용자 이메일
+
+    Returns:
+        str: 회신 성공 메시지.
+    """
+    try:
+        if my_email is None or my_email == "":
+            my_email = DEFAULT_USER_EMAIL
+
+        token = get_access_token()
+
+        action = "replyAll" if reply_all else "reply"
+        endpoint = f"https://graph.microsoft.com/v1.0/users/{my_email}/messages/{message_id}/{action}"
+
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+
+        # reply API requires a 'message' object which only contains 'comment'
+        payload = {
+            "comment": comment
+        }
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(endpoint, headers=headers, json=payload)
+
+        if response.status_code == 202:
+            return f"해당 스레드에 성공적으로 회신했습니다. (원본 메일 ID: {message_id})"
+        else:
+            response.raise_for_status()
+            return "메일 회신 중 오류가 발생했습니다."
+
+    except Exception as e:
+        raise RuntimeError(f"메일 회신 실패: {str(e)}")
+
+
+@mcp.tool()
+async def get_attachments(
+    message_id: Annotated[str, "첨부파일을 확인할 원본 메일의 고유 ID. 반드시 hasAttachments 필드가 true인 메일 ID를 입력해야 합니다."],
+    my_email: Annotated[Optional[str], "사용자 메일. 비우면 DEFAULT_USER_EMAIL 사용"] = None
+) -> str:
+    """
+    특정 이메일에 포함된 첨부파일의 메타데이터(이름, 크기 등) 목록을 조회합니다.
+
+    [LLM 에이전트 사용 가이드]
+    1. 메일에 첨부파일이 있다는 사실을 알았을 때, 실제 파일을 열기 전에 어떤 파일들이 있는지 목록과 크기를 파악하기 위해 사용합니다.
+    2. message_id는 필수입니다.
+
+    Args:
+        - message_id (str): 원본 메일 ID
+        - my_email (str, optional): 사용자 이메일
+
+    Returns:
+        str: 파일 이름과 크기 메타데이터 목록 (예: '["파일이름1.pdf (분류: PDF, 크기: 2.3MB)", "파일이름2.jpg (분류: 이미지, 크기: 10KB)"]')
+    """
+    try:
+        if my_email is None or my_email == "":
+            my_email = DEFAULT_USER_EMAIL
+
+        token = get_access_token()
+
+        endpoint = f"https://graph.microsoft.com/v1.0/users/{my_email}/messages/{message_id}/attachments"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+        }
+
+        params = {
+            "$select": "name,size,contentType"
+        }
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(endpoint, headers=headers, params=params)
+
+        response.raise_for_status()
+        attachments = response.json().get("value", [])
+
+        if not attachments:
+            return "이 메일에는 다운로드할 수 있는 첨부파일이 없습니다."
+
+        results = []
+        for att in attachments:
+            name = att.get("name", "Unknown")
+            size = att.get("size", 0)
+
+            if size >= 1024 * 1024:
+                size_str = f"{size / (1024 * 1024):.1f}MB"
+            elif size >= 1024:
+                size_str = f"{size / 1024:.1f}KB"
+            else:
+                size_str = f"{size}B"
+
+            # 분류(확장자) 추출
+            ext = name.split('.')[-1].upper() if '.' in name else "알 수 없음"
+
+            results.append(f"{name} (분류: {ext}, 크기: {size_str})")
+
+        return "[\n  " + ",\n  ".join(f'"{r}"' for r in results) + "\n]"
+
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            return "지정한 메일을 찾을 수 없거나 첨부파일에 접근할 수 없습니다."
+        raise RuntimeError(f"첨부파일 조회 실패(HTTP {e.response.status_code}): {e.response.text}")
+    except Exception as e:
+        raise RuntimeError(f"첨부파일 조회 실패: {str(e)}")
 
 
 @mcp.tool()
@@ -622,6 +990,74 @@ async def list_calendar_events(
 
     except Exception as e:
         raise RuntimeError(f"일정 조회 실패: {str(e)}")
+
+
+@mcp.tool()
+async def get_event(
+    event_id: Annotated[str, "조회할 캘린더 일정의 event_id. list_calendar_events로 획득한 값"],
+    my_email: Annotated[Optional[str], "사용자 메일. 비우면 DEFAULT_USER_EMAIL 사용"] = None
+) -> str:
+    """
+    단일 캘린더 일정의 상세 정보를 조회합니다.
+
+    [LLM 에이전트 사용 가이드]
+    1. 일정의 전체 세부 내용(주최자, 참석자, 본문 등)이 필요할 때 사용합니다.
+    2. event_id는 필수입니다.
+
+    Args:
+        - event_id (str): 원본 일정 ID
+        - my_email (str, optional): 사용자 이메일
+
+    Returns:
+        str: 일정의 상세 정보 텍스트
+    """
+    try:
+        if my_email is None or my_email == "":
+            my_email = DEFAULT_USER_EMAIL
+
+        token = get_access_token()
+
+        endpoint = f"https://graph.microsoft.com/v1.0/users/{my_email}/events/{event_id}"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+            "Prefer": 'outlook.body-content-type="text"'
+        }
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(endpoint, headers=headers)
+
+        if response.status_code == 404:
+            return "해당 일정을 찾을 수 없습니다."
+
+        response.raise_for_status()
+        event = response.json()
+
+        subject = event.get("subject", "(제목 없음)")
+        start = event.get("start", {}).get("dateTime", "")
+        end = event.get("end", {}).get("dateTime", "")
+        location = event.get("location", {}).get("displayName", "")
+        organizer = event.get("organizer", {}).get("emailAddress", {}).get("name", "")
+
+        attendees = event.get("attendees", [])
+        att_list = [a.get("emailAddress", {}).get("address", "") for a in attendees]
+        att_str = ", ".join(filter(None, att_list)) if att_list else "없음"
+
+        body = event.get("body", {}).get("content", "")
+
+        result_text = f"제목: {subject}\n"
+        result_text += f"시간: {start} ~ {end}\n"
+        result_text += f"장소: {location}\n"
+        result_text += f"주최자: {organizer}\n"
+        result_text += f"참석자: {att_str}\n"
+        result_text += "-" * 30 + "\n"
+        result_text += "설명:\n"
+        result_text += body
+
+        return result_text
+
+    except Exception as e:
+        raise RuntimeError(f"일정 상세 조회 실패: {str(e)}")
 
 
 @mcp.tool()
